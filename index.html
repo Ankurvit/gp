@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Gungdu-Pungdu</title>
+
+<style>
+
+body{
+margin:0;
+font-family:Arial;
+background:#2f8f46;
+overflow:hidden;
+}
+
+#selection{
+text-align:center;
+font-size:40px;
+padding:20px;
+}
+
+#game{
+display:none;
+position:relative;
+width:100vw;
+height:100vh;
+}
+
+canvas{
+display:block;
+margin:auto;
+background:#2e8b57;
+}
+
+#message{
+position:absolute;
+top:35%;
+width:100%;
+text-align:center;
+font-size:40px;
+color:white;
+font-weight:bold;
+text-shadow:3px 3px 6px black;
+display:none;
+}
+
+#scoreboard{
+position:absolute;
+top:10px;
+left:50%;
+transform:translateX(-50%);
+background:white;
+padding:8px 20px;
+border-radius:10px;
+font-size:22px;
+font-weight:bold;
+}
+
+#sleepBox{
+position:absolute;
+top:40%;
+left:50%;
+transform:translateX(-50%);
+background:white;
+padding:20px;
+border-radius:10px;
+display:none;
+font-size:22px;
+}
+
+button{
+font-size:18px;
+margin:10px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="selection"></div>
+
+<div id="game">
+
+<div id="scoreboard">
+<span id="playerLabel"></span> <span id="playerScore">0</span>
+&nbsp;&nbsp;|&nbsp;&nbsp;
+<span id="computerLabel"></span> <span id="computerScore">0</span>
+</div>
+
+<div id="message"></div>
+
+<div id="sleepBox">
+Do you wanna sleep?<br>
+<button onclick="sleepYes()">Yes</button>
+<button onclick="sleepNo()">No</button>
+</div>
+
+<canvas id="canvas" width="500" height="700"></canvas>
+
+</div>
+
+<script>
+
+const animals=[
+"🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯",
+"🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐦","🐤","🦆",
+"🦅","🦉","🐺","🐗","🐴","🦄","🐝","🐛","🦋","🐌"
+]
+
+let playerEmoji
+let computerEmoji
+
+const selection=document.getElementById("selection")
+
+function selectAnimal1(){
+
+selection.innerHTML="<h2>Select Animal 1</h2>"
+
+animals.forEach((a,i)=>{
+let span=document.createElement("span")
+span.innerHTML=a
+span.style.cursor="pointer"
+span.onclick=()=>selectAnimal2(i)
+selection.appendChild(span)
+})
+
+}
+
+function selectAnimal2(i){
+
+playerEmoji=animals[i]
+
+selection.innerHTML="<h2>Select Animal 2</h2>"
+
+animals.forEach((a,j)=>{
+if(j!==i){
+let span=document.createElement("span")
+span.innerHTML=a
+span.style.cursor="pointer"
+span.onclick=()=>startConversation(a)
+selection.appendChild(span)
+}
+})
+
+}
+
+/* conversation */
+
+function startConversation(a){
+
+computerEmoji=a
+
+selection.style.display="none"
+game.style.display="block"
+
+document.getElementById("playerLabel").innerText=playerEmoji
+document.getElementById("computerLabel").innerText=computerEmoji
+
+const message=document.getElementById("message")
+
+message.style.display="block"
+message.innerHTML=playerEmoji+" : Main Better hun"
+
+setTimeout(()=>{
+
+message.innerHTML=
+playerEmoji+" : Main Better hun<br><br>"+
+computerEmoji+" : Main Better hun"
+
+setTimeout(()=>{
+
+message.innerHTML="Lets Race to see who is better!"
+
+setTimeout(()=>{
+message.style.display="none"
+startRace()
+},2000)
+
+},2000)
+
+},2000)
+
+}
+
+/* canvas */
+
+const canvas=document.getElementById("canvas")
+const ctx=canvas.getContext("2d")
+
+let player={x:240,y:560}
+let computer={x:240,y:560}
+
+let sleeping=false
+let computerVisible=false
+
+let obstacles=[]
+
+let playerScore=0
+let computerScore=5
+
+/* controls */
+
+document.addEventListener("keydown",e=>{
+
+if(e.key==="ArrowLeft") player.x-=20
+if(e.key==="ArrowRight") player.x+=20
+
+})
+
+/* obstacle spawn */
+
+function spawnObstacle(){
+
+obstacles.push({
+x:160+Math.random()*180,
+y:-40
+})
+
+}
+
+/* sleep prompts */
+
+function startSleepPrompts(){
+
+setTimeout(()=>{
+
+showSleepPrompt()
+
+setInterval(()=>{
+
+if(!sleeping){
+showSleepPrompt()
+}
+
+},10000)
+
+},20000)
+
+}
+
+function showSleepPrompt(){
+
+sleepBox.style.display="block"
+
+}
+
+/* sleep logic */
+
+function sleepYes(){
+
+sleeping=true
+sleepBox.style.display="none"
+
+setTimeout(()=>{
+computerVisible=true
+},7000)
+
+}
+
+function sleepNo(){
+
+sleepBox.style.display="none"
+
+}
+
+/* game loop */
+
+function update(){
+
+ctx.clearRect(0,0,canvas.width,canvas.height)
+
+drawTrack()
+
+ctx.font="40px Arial"
+
+/* player */
+
+if(sleeping)
+ctx.fillText(playerEmoji+"💤",player.x,player.y)
+else
+ctx.fillText(playerEmoji,player.x,player.y)
+
+/* automatic forward scoring */
+
+playerScore += 1
+
+/* computer baseline scoring */
+
+computerScore += 0.3
+
+/* computer overtakes */
+
+if(computerVisible){
+
+ctx.fillText(computerEmoji,computer.x,computer.y)
+
+computer.y -= 1.5
+
+if(computerScore < playerScore + 20){
+computerScore += 1.2
+}
+
+if(computer.y < 60){
+
+if(computerScore <= playerScore){
+computerScore = playerScore + 5
+}
+
+updateScores()
+showWinner(computerEmoji)
+return
+
+}
+
+}
+
+/* obstacles */
+
+obstacles.forEach(o=>{
+
+o.y += 5
+
+ctx.font="30px Arial"
+ctx.fillText("⛔",o.x,o.y)
+
+})
+
+updateScores()
+
+requestAnimationFrame(update)
+
+}
+
+function updateScores(){
+
+document.getElementById("playerScore").innerText=Math.floor(playerScore)
+document.getElementById("computerScore").innerText=Math.floor(computerScore)
+
+}
+
+/* track */
+
+function drawTrack(){
+
+ctx.fillStyle="#555"
+ctx.fillRect(100,0,300,700)
+
+ctx.strokeStyle="white"
+ctx.lineWidth=6
+
+ctx.beginPath()
+ctx.moveTo(100,0)
+ctx.lineTo(100,700)
+ctx.stroke()
+
+ctx.beginPath()
+ctx.moveTo(400,0)
+ctx.lineTo(400,700)
+ctx.stroke()
+
+/* finish line */
+
+ctx.fillStyle="white"
+
+for(let i=100;i<400;i+=20){
+ctx.fillRect(i,60,10,10)
+}
+
+}
+
+/* winner */
+
+function showWinner(animal){
+
+const message=document.getElementById("message")
+
+message.style.display="block"
+message.innerText=animal+" wins!"
+
+}
+
+/* start race */
+
+function startRace(){
+
+setInterval(spawnObstacle,1500)
+
+startSleepPrompts()
+
+update()
+
+}
+
+selectAnimal1()
+
+</script>
+
+</body>
+</html>
