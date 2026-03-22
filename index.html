@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gungdu Pungdu</title>
+    <style>
+        :root { --neon-blue: #00f3ff; --neon-pink: #ff00ff; }
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            overflow: hidden; background: #000; color: white;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            touch-action: none;
+        }
+        .screen {
+            position: absolute; width: 100%; height: 100%;
+            display: none; flex-direction: column; justify-content: center;
+            align-items: center; text-align: center; z-index: 10;
+            padding: 20px; box-sizing: border-box;
+        }
+        .active { display: flex; }
+        
+        .chat-row {
+            display: flex; align-items: center; justify-content: center;
+            margin: 15px; width: 100%;
+        }
+        .chat-animal { font-size: 4rem; margin-right: 20px; }
+        .chat-text { 
+            background: #222; padding: 15px; border-radius: 12px; 
+            min-width: 220px; text-align: left; border: 2px solid #444;
+            font-size: 1.5rem; white-space: pre-wrap;
+        }
+
+        #scoreboard {
+            position: absolute; top: 0; width: 100%; height: 70px;
+            background: rgba(0,0,0,0.95); display: flex;
+            justify-content: space-around; align-items: center;
+            border-bottom: 2px solid var(--neon-blue); z-index: 15;
+            font-weight: bold; font-size: 1.5rem;
+        }
+        canvas { display: block; background: #111; }
+        
+        #sleep-prompt {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.98); padding: 35px; border: 3px solid var(--neon-pink);
+            border-radius: 20px; display: none; z-index: 100; width: 85%;
+        }
+        button {
+            padding: 18px 32px; font-size: 1.3rem; margin: 10px;
+            background: var(--neon-blue); border: none; font-weight: bold;
+            border-radius: 10px; color: #000; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="screen-select" class="screen active">
+        <h1 style="color:var(--neon-blue); font-size: 2.8rem;">Gungdu Pungdu</h1>
+        <h2 id="select-label">Select Animal 1</h2>
+        <div id="grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px;"></div>
+    </div>
+
+    <div id="screen-conv" class="screen">
+        <div class="chat-row">
+            <div id="conv-a1-icon" class="chat-animal"></div>
+            <div id="m1" class="chat-text"></div>
+        </div>
+        <div class="chat-row">
+            <div id="conv-a2-icon" class="chat-animal"></div>
+            <div id="m2" class="chat-text"></div>
+        </div>
+        <div id="m3" style="color:var(--neon-pink); font-weight:bold; font-size:1.8rem; margin-top:20px;"></div>
+    </div>
+
+    <div id="screen-race" class="screen" style="padding:0;">
+        <div id="scoreboard">
+            <div id="score1-ui"></div>
+            <div id="score2-ui"></div>
+        </div>
+        <canvas id="canvas"></canvas>
+        <div id="sleep-prompt">
+            <h2 style="color:var(--neon-pink);">PAUSED</h2>
+            <p style="font-size: 1.5rem;">Do you wanna sleep?</p>
+            <button id="btn-yes">Yes</button>
+            <button id="btn-no">No</button>
+        </div>
+    </div>
+
+    <div id="screen-win" class="screen">
+        <h1 id="win-title" style="font-size: 4rem; color: var(--neon-pink);">You slept</h1>
+        <h2 id="winner-name" style="font-size: 2.2rem;"></h2>
+        <p id="final-comparison" style="font-size: 1.5rem;"></p>
+        <button onclick="location.reload()">Try Again</button>
+    </div>
+</div>
+
+<script>
+    const emojis = ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐦","🐤","🐺", "🐢"];
+    let animal1 = "", animal2 = "";
+    let s1 = 0, s2 = 0;
+    let selectionPhase = 1;
+    let gameActive = false, isPaused = false, isSleeping = false, showComputer = false;
+    let playerX = 0, obstacles = [], compY = 0, compX = 0, finishLineY = -400;
+    let zSize = 20, zGrow = true, flickerTimer = 0;
+    let frozenS1 = 0;
+    
+    // Secret Win Logic Variables
+    let sleepPromptCount = 0;
+    let targetPrompts = 0;
+    let secretWinTriggered = false;
+
+    const cvs = document.getElementById('canvas');
+    const ctx = cvs.getContext('2d');
+
+    function initGrid() {
+        const grid = document.getElementById('grid');
+        emojis.forEach(e => {
+            const b = document.createElement('div');
+            b.style.fontSize = "2.5rem"; b.style.cursor = "pointer"; b.innerText = e;
+            b.onclick = () => {
+                if (selectionPhase === 1) { 
+                    animal1 = e; selectionPhase = 2; 
+                    document.getElementById('select-label').innerText = "Select Animal 2"; 
+                    b.style.opacity = "0.2"; 
+                } else { 
+                    animal2 = e; startConversation(); 
+                }
+            };
+            grid.appendChild(b);
+        });
+    }
+
+    async function typeWriter(text, elementId) {
+        const el = document.getElementById(elementId);
+        for (let i = 0; i < text.length; i++) {
+            let char = text.charAt(i);
+            el.innerText += (char === " ") ? "\u00A0" : char;
+            await new Promise(r => setTimeout(r, 50));
+        }
+    }
+
+    async function startConversation() {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('screen-conv').classList.add('active');
+        document.getElementById('conv-a1-icon').innerText = animal1;
+        document.getElementById('conv-a2-icon').innerText = animal2;
+        await typeWriter("Main Better hun", 'm1');
+        await new Promise(r => setTimeout(r, 800));
+        await typeWriter("Main Better hun", 'm2');
+        await new Promise(r => setTimeout(r, 800));
+        await typeWriter("Lets   Race   to   see   who   is   better", 'm3');
+        await new Promise(r => setTimeout(r, 2000));
+        startRace();
+    }
+
+    function startRace() {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('screen-race').classList.add('active');
+        cvs.width = window.innerWidth; cvs.height = window.innerHeight;
+        playerX = cvs.width / 2; compY = cvs.height + 200; compX = (cvs.width / 2) - 80;
+        
+        // Pick a random number of prompts (1 to 5) required for the secret win
+        targetPrompts = Math.floor(Math.random() * 5) + 1;
+        
+        gameActive = true;
+        setTimeout(triggerSleepPrompt, 15000);
+        requestAnimationFrame(gameLoop);
+    }
+
+    function triggerSleepPrompt() {
+        if (!gameActive || isSleeping || secretWinTriggered) return;
+        sleepPromptCount++; 
+        isPaused = true;
+        document.getElementById('sleep-prompt').style.display = 'block';
+    }
+
+    document.getElementById('btn-yes').onclick = () => confirmSleep(true);
+    document.getElementById('btn-no').onclick = () => confirmSleep(false);
+
+    function confirmSleep(choice) {
+        document.getElementById('sleep-prompt').style.display = 'none';
+        isPaused = false;
+        
+        // Check if user picked one of the 3 secret pairs
+        let isSecretPair = (animal1 === "🦁" && animal2 === "🐧") || 
+                           (animal1 === "🐷" && animal2 === "🦊") || 
+                           (animal1 === "🐵" && animal2 === "🐮");
+
+        // SECRET WIN CHECK: Correct pair AND hit the random target prompt count
+        if (isSecretPair && sleepPromptCount === targetPrompts) {
+            secretWinTriggered = true;
+            return; // Trigger player win immediately
+        }
+
+        if (choice) {
+            isSleeping = true;
+            frozenS1 = s1; 
+            setTimeout(() => { showComputer = true; }, 4000);
+        } else { 
+            setTimeout(triggerSleepPrompt, 8000); 
+        }
+    }
+
+    window.addEventListener('keydown', e => {
+        if (!gameActive || isSleeping || isPaused) return;
+        if (e.key === "ArrowLeft") playerX = Math.max(60, playerX - 50);
+        if (e.key === "ArrowRight") playerX = Math.min(cvs.width - 60, playerX + 50);
+    });
+
+    window.addEventListener('touchstart', e => {
+        if (!gameActive || isSleeping || isPaused) return;
+        const touchX = e.touches[0].clientX;
+        if (touchX < window.innerWidth / 2) playerX = Math.max(60, playerX - 50);
+        else playerX = Math.min(cvs.width - 60, playerX + 50);
+    }, {passive: true});
+
+    function gameLoop() {
+        if (!gameActive) return;
+        if (!isPaused) {
+            ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, cvs.width, cvs.height);
+            ctx.fillStyle = '#1a1a1a'; ctx.fillRect(50, 0, cvs.width - 100, cvs.height);
+
+            const playerY = cvs.height - 120;
+
+            if (!isSleeping) {
+                s1 += 0.15; s2 += 0.05;
+                if (Math.random() < 0.02) obstacles.push({ x: Math.random() * (cvs.width-140)+70, y: -50 });
+            } else {
+                if (zGrow) { zSize += 0.3; if (zSize > 35) zGrow = false; }
+                else { zSize -= 0.3; if (zSize < 15) zGrow = true; }
+
+                if (showComputer) {
+                    compY -= 1.3; 
+                    
+                    if (compY > playerY) {
+                        let progress = 1 - ((compY - playerY) / 600);
+                        s2 = frozenS1 * Math.max(0.1, progress);
+                    } else {
+                        s2 += 0.8;
+                        if (s2 < frozenS1) s2 = frozenS1; 
+                    }
+
+                    if (compY < 500) finishLineY = Math.min(100, finishLineY + 2.5);
+                }
+            }
+
+            // Secret Win Logic - Player Finish Line
+            if (secretWinTriggered) {
+                finishLineY += 3.5; // Bring down finish line quickly for the player
+                ctx.fillStyle = "white";
+                for (let i = 0; i < 12; i++) ctx.fillRect(50 + (i * 60), finishLineY, 30, 30);
+                
+                if (finishLineY > playerY - 20) {
+                    gameActive = false;
+                    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                    document.getElementById('screen-win').classList.add('active');
+                    document.getElementById('win-title').innerText = "You won!";
+                    document.getElementById('win-title').style.color = "var(--neon-blue)";
+                    document.getElementById('winner-name').innerText = `${animal1} WINS!`;
+                    document.getElementById('final-comparison').innerText = `Score: ${Math.floor(s1)} vs ${Math.floor(s2)}`;
+                }
+            }
+
+            // Normal Computer Finish Line
+            if (showComputer && compY < 500 && !secretWinTriggered) {
+                ctx.fillStyle = "white";
+                for (let i = 0; i < 12; i++) ctx.fillRect(50 + (i * 60), finishLineY, 30, 30);
+            }
+
+            obstacles.forEach(o => {
+                o.y += 6; ctx.font = "35px Arial"; ctx.fillText("🚧", o.x, o.y);
+                if (!isSleeping && Math.abs(o.x - playerX) < 40 && Math.abs(o.y - playerY) < 40) {
+                    flickerTimer = 20; o.y = cvs.height + 500;
+                }
+            });
+
+            ctx.textAlign = "center"; ctx.font = "55px Arial";
+            if (flickerTimer > 0) { ctx.globalAlpha = 0.3; flickerTimer--; }
+            ctx.fillText(animal1, playerX, playerY);
+            ctx.globalAlpha = 1.0;
+
+            if (isSleeping && !secretWinTriggered) {
+                ctx.font = `${zSize}px Arial`; ctx.fillStyle = "white";
+                ctx.fillText("💤", playerX + 50, playerY - 40);
+            }
+
+            // Normal Loss
+            if (showComputer && !secretWinTriggered) {
+                ctx.fillText(animal2, compX, compY);
+                if (compY < finishLineY + 15) {
+                    gameActive = false;
+                    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                    document.getElementById('screen-win').classList.add('active');
+                    document.getElementById('winner-name').innerText = `${animal2} WINS!`;
+                    document.getElementById('final-comparison').innerText = `Score: ${Math.floor(s2)} vs ${Math.floor(s1)}`;
+                }
+            }
+
+            document.getElementById('score1-ui').innerText = `${animal1} : ${Math.floor(s1)}`;
+            document.getElementById('score2-ui').innerText = `${animal2} : ${Math.floor(s2)}`;
+        }
+        requestAnimationFrame(gameLoop);
+    }
+    initGrid();
+</script>
+</body>
+</html>
